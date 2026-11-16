@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 房間狀態
+enum RoomStatus {
+  LOBBY
+  COLLECTING_ACTIONS
+  AWAITING_HOST
+  AWAITING_SPARK
+  RESOLVING
+  REVEALING
+  COMPLETED
+}
+
+// 玩家身分
+enum SessionRole {
+  HOST
+  PLAYER
+}
+
+// 回合狀態
+enum RoundStatus {
+  COLLECTING
+  AWAITING_HOST
+  AWAITING_SPARK
+  RESOLVING
+  REVEALING
+  COMPLETED
+}
+
+// 行動判定結果
+enum ActionOutcome {
+  SUCCESS
+  PARTIAL
+  FAILURE
+}
+
+// 1. 遊戲房間
+model Room {
+  id   String @id @default(uuid())
+  code String @unique @db.VarChar(12)
+
+  name         String @db.VarChar(100)
+  worldName    String @db.VarChar(100)
+  worldSetting String @db.Text
+  objective    String @db.Text
+  initialScene String @db.Text
+
+  status       RoomStatus @default(LOBBY)
+  currentRound Int        @default(0)
+  maxRounds    Int        @default(8)
+  maxPlayers   Int        @default(4)
+
+  progress Int @default(0)
+  crisis   Int @default(0)
+  version  Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  players Player[]
+  rounds  Round[]
+
+  @@map("rooms")
+}
+
+// 2. 玩家與角色
+model Player {
+  id     String @id @default(uuid())
+  roomId String
+
+  nickname       String @db.VarChar(40)
+  characterName  String @db.VarChar(60)
+  characterClass String @db.VarChar(40)
+  background     String @db.Text
+
+  courage Int @default(0)
+  insight Int @default(0)
+  bond    Int @default(0)
+  spark   Int @default(2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  room     Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sessions Session[]
+  actions  Action[]
+
+  @@unique([roomId, nickname])
+  @@index([roomId])
+  @@map("players")
+}
+
+// 3. 玩家 Session
+model Session {
+  id        String      @id @default(uuid())
+  playerId  String
+  tokenHash String      @unique @db.VarChar(64)
+  role      SessionRole @default(PLAYER)
+
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// 4. 遊戲回合
+model Round {
+  id     String @id @default(uuid())
+  roomId String
+  number Int
+
+  status      RoundStatus @default(COLLECTING)
+  startedAt   DateTime    @default(now())
+  completedAt DateTime?
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  actions Action[]
+
+  @@unique([roomId, number])
+  @@map("rounds")
+}
+
+// 5. 玩家行動與判定結果
+model Action {
+  id       String @id @default(uuid())
+  roundId  String
+  playerId String
+
+  content   String @db.Text
+  attribute String @db.VarChar(20)
+
+  die1      Int?
+  die2      Int?
+  usedSpark Boolean?
+  total     Int?
+  outcome   ActionOutcome?
+
+  progressGain Int?
+  crisisGain   Int?
+
+  isLocked Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  round Round @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, playerId])
+  @@index([playerId])
+  @@map("actions")
+}
